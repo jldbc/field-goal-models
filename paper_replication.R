@@ -7,7 +7,6 @@
 #imputed <- complete(imputed, 1)
 #dat <- imputed
 #######################################################################################################
-
 #defining key variables
 
 dat <- read.csv("imputed_kicker_data.csv")
@@ -22,8 +21,8 @@ dat$mileHigh <- ifelse(dat$Sports.Authority.Field.at.Mile.High ==1, 1, 0)
 dat$mileHigh[dat$Mile.High.Stadium == 1] <- 1
 
 #######################################################################################################
-
-
+library(ggplot2)
+library(plyr)
 
 #logistic regression models
 #my favorite model (replication + iced)
@@ -45,10 +44,15 @@ summary(fitStadiums)$coefficients
 
 
 #show model's expected probabilities of kicks in data set 
-preds = predict(fit1, dat, type="response") 
-qplot(x=dat$dist, y=preds, color="red") + guides(colour=FALSE) +
+probability = predict(fit2, dat, type="response") 
+distance = dat$dist
+qplot(x=distance, y=probability, color="red") + guides(colour=FALSE) +
   scale_x_continuous(breaks = round(seq(min(15), max(dat$dist), by = 5),1)) +
-  scale_y_continuous(breaks=round(seq(min(0), max(1), by=.05), 1))
+  scale_y_continuous(breaks=round(seq(min(0), max(1), by=.05), 1)) +
+  theme(axis.text.x = element_text(face="bold",
+  size=14),  axis.text.y = element_text(face="bold", size=14), 
+  axis.title.x = element_text(size=16,face="bold"),
+  axis.title.y = element_text(size=16,face="bold"))                                                                                                 
 
 
 #situational comparison 1 (from MIT paper): Patriots 2002 in NE vs in OAK
@@ -83,7 +87,11 @@ ggplot(data=predsaa,
   scale_y_continuous(breaks=round(seq(min(0), max(predsaa$value), by=.05), 1)) + 
   scale_colour_manual(
     values = c("predb" = "red", "preda" = "blue"), labels = c("Game at OAK", "Game at NE"), 
-    breaks=c("predb","preda"))
+    breaks=c("predb","preda")) +
+  theme(axis.text.x = element_text(face="bold",
+  size=14),  axis.text.y = element_text(face="bold", size=14), 
+  axis.title.x = element_text(size=16,face="bold"),
+  axis.title.y = element_text(size=16,face="bold"))            
 
 
 #now, if he were in New England, but was iced
