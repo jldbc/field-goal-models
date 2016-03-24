@@ -9,7 +9,7 @@
 #######################################################################################################
 #defining key variables
 
-dat <- read.csv("imputed_kicker_data.csv")
+dat <- read.csv("Documents/Field_Goal_Models/imputed_kicker_data.csv")
 
 dat$cold <- ifelse(dat$temp > 50,0, 1)
 dat$windy <- ifelse(dat$wspd >= 10,1, 0)

@@ -1,7 +1,28 @@
 #random forest models 
 library(ggplot2)
 library(randomForest)
-dat = read.csv("imputed_kicker_data.csv")
+library(caret)
+dat = read.csv("Documents/field_goal_models/imputed_kicker_data.csv")
+
+for(t in unique(dat$kicker)) {
+  dat[paste("k_",t,sep="")] <- ifelse(dat$kicker==t,1,0)
+}
+
+dat$kicker = NULL
+#remove dashes from var names to allow for legal formula 
+for(i in 1:length(names(dat))) {
+  names(dat)[i] = gsub("-", "", names(dat)[i])
+  #print(names(dat)[i])
+}
+#kickers with NANs
+dat$k_WW0200 <- NULL
+dat$k_MS0600 <- NULL
+dat$Thunderstorms <- NULL
+dat$k_BG1200 <- NULL
+dat$away <- NULL
+n <- names(dat)
+f <- as.formula(paste("good ~", paste(n[!n %in% "good"], collapse = " + ")))
+
 
 # 80/20 train/test split
 set.seed(3456)
@@ -13,35 +34,38 @@ nflTrain <- dat[ trainIndex,]
 nflTest  <- dat[-trainIndex,]
 
 
+nflTrain <- dat[ trainIndex,]
+nflTest  <- dat[-trainIndex,]
+
+
 #testing w/ various numbers of trees
-rf1 <- randomForest(good ~ temp + wspd + dist + iced + turf + precip, nflTrain, ntree=10000)
-rf2 <- randomForest(good ~ cold + windy + dist + iced + turf + precip, nflTrain, ntree=10000)
+#rf1 <- randomForest(good ~ temp + wspd + dist + iced + turf + precip, nflTrain, ntree=10000)
+#rf2 <- randomForest(good ~ cold + windy + dist + iced + turf + precip, nflTrain, ntree=10000)
 rf3 <- randomForest(good ~ temp + wspd + dist + iced + turf + precip, nflTrain, ntree=5000)
 rf4 <- randomForest(good ~ cold + windy + dist + iced + turf + precip, nflTrain, ntree=5000)
 rf5 <- randomForest(good ~ temp + wspd + dist + iced + turf + precip, nflTrain, ntree=1000)
 rf6 <- randomForest(good ~ cold + windy + dist + iced + turf + precip, nflTrain, ntree=1000)
+
 rf7 <- randomForest(good ~ temp + wspd + dist + iced + turf + precip, nflTrain, ntree=500)
 rf8 <- randomForest(good ~ cold + windy + dist + iced + turf + precip, nflTrain, ntree=500)
 
-preds1 <- predict(rf7, nflTest)
-preds2 <- predict(rf2, nflTrain)
 
-qplot(x=nflTest$dist, y=preds1, color="red") + guides(colour=FALSE) +
+preds1 <- predict(rf5, nflTest)
+preds2 <- predict(rf6, nflTest)
+
+
+qplot(x=nflTest$dist, y=preds2, color="red") + guides(colour=FALSE) +
   scale_x_continuous(breaks = round(seq(min(15), max(nflTest$dist), by = 5),1)) +
   scale_y_continuous(breaks=round(seq(min(0), max(1), by=.05), 1))
 
 
-qplot(x=nflTrain$dist, y=preds1, color="red")
-qplot(x=nflTrain$dist, y=preds2, color="red")
+nflTest$preds1 <- preds1
+nflTest$preds2 <- preds2
+nflTest$resids1 <- (nflTest$good - nflTest$preds1)^2
+nflTest$resids2 <- (nflTest$good - nflTest$preds2)^2
 
-
-nflTrain$preds1 <- preds1
-nflTrain$preds2 <- preds2
-nflTrain$resids1 <- (nflTrain$good - nflTrain$preds1)^2
-nflTrain$resids2 <- (nflTrain$good - nflTrain$preds2)^2
-
-SSR1 <- sum(nflTrain$resids1)
-SSR2 <- sum(nflTrain$resids2)
+SSR1 <- sum(nflTest$resids1)
+SSR2 <- sum(nflTest$resids2)
 
 
 #use w/ test data 

@@ -1,6 +1,28 @@
 library(neuralnet)
+library(caret)
 library(deepnet)
-dat <- read.csv("imputed_kicker_data.csv")
+
+dat <- read.csv("Documents/field_goal_models/imputed_kicker_data.csv")
+
+#kicker dummies
+for(t in unique(dat$kicker)) {
+     dat[paste("k_",t,sep="")] <- ifelse(dat$kicker==t,1,0)
+   }
+dat$kicker = NULL
+#remove dashes from var names to allow for legal formula 
+for(i in 1:length(names(dat))) {
+  names(dat)[i] = gsub("-", "", names(dat)[i])
+  #print(names(dat)[i])
+}
+dat$k_WW0200 <- NULL
+dat$k_MS0600 <- NULL
+dat$Thunderstorms <- NULL
+dat$k_BG1200 <- NULL
+dat$away <- NULL
+n <- names(dat)
+
+f <- as.formula(paste("good ~", paste(n[!n %in% "good"], collapse = " + ")))
+f
 
 #80/20 train/test split
 set.seed(3456)
@@ -12,20 +34,35 @@ nflTrain <- dat[ trainIndex,]
 nflTest  <- dat[-trainIndex,]
 
 
+#original simple model
 keeps <- c("temp", "dist", "qtr", "good", "iced", "away", "humd", "mileHigh", "turf", "precip", "windy")
-train <- nflTrain[keeps]
+#train <- nflTrain[keeps]
+train <- nflTrain
 
 #scale the data 
+train$kicker = NULL
 maxs <- apply(train, 2, max) 
 mins <- apply(train, 2, min)
 
 scaled <- as.data.frame(scale(train, center = mins, scale = maxs - mins))
 train_ <- scaled
 
-
 ## build the neural network 
-nn <- neuralnet(good ~ dist + iced + temp + wspd + mileHigh + turf + precip, data=train_, hidden = (5), lifesign = "minimal", 
+nn <- neuralnet(good ~ dist + iced + temp + windy + mileHigh + turf + precip, data=train_, hidden = (5), lifesign = "full", 
                        linear.output = TRUE, threshold = 0.04)   
+
+
+nn <- nn.train(f, data=train_, hidden = (c(100, 50, 25)), lifesign = "full", 
+                linear.output = TRUE, threshold = 0.04)   
+
+
+#above example didn't train fast enough. trying deepnet package instead. 
+trainx = train_
+trainx$good <- NULL
+trainy = train_$good
+nn <- nn.train(trainx, trainy, hidden = c(100, 50, 25))
+
+
 
 ## plot NN architecture and weights 
 plot(nn, rep = "best")
@@ -41,13 +78,15 @@ plot(train$dist, nn.results$net.result)
 
 
 #now for the test data    
-test <- nflTest[keeps]
+#test <- nflTest[keeps]
+test <- nflTest
 train <- nflTrain[keeps]
 maxs <- apply(train, 2, max) 
 mins <- apply(train, 2, min)
 
 scaled <- as.data.frame(scale(test, center = mins, scale = maxs - mins))
 test_ <- scaled
+test_$k_WW0200 <- NULL
 
 test <- subset(test_, select = c("dist", "iced", "temp", "windy", "mileHigh", "turf", "precip"))
 
