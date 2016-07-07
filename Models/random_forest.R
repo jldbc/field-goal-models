@@ -2,131 +2,101 @@
 library(ggplot2)
 library(randomForest)
 library(caret)
-dat = read.csv("Documents/field_goal_models/imputed_kicker_data.csv")
 
-for(t in unique(dat$kicker)) {
-  dat[paste("k_",t,sep="")] <- ifelse(dat$kicker==t,1,0)
-}
+#load data
+dat <- read.csv("/Users/jamesledoux/Desktop/imputed_kicker_data.csv")
 
-dat$kicker = NULL
-#remove dashes from var names to allow for legal formula 
-for(i in 1:length(names(dat))) {
-  names(dat)[i] = gsub("-", "", names(dat)[i])
-  #print(names(dat)[i])
-}
-#kickers with NANs
-dat$k_WW0200 <- NULL
-dat$k_MS0600 <- NULL
-dat$Thunderstorms <- NULL
-dat$k_BG1200 <- NULL
-dat$away <- NULL
-n <- names(dat)
-f <- as.formula(paste("good ~", paste(n[!n %in% "good"], collapse = " + ")))
+#subset then drop NAs
+dat <- subset( dat, select = c(good, temp, windy, wspd, dist, iced, turf, precip) )
+dat <- dat[complete.cases(dat),]
 
+#Randomly shuffle the data
+dat<-dat[sample(nrow(dat)),]
 
-# 80/20 train/test split
+#hide final test data (80/20 split)
 set.seed(3456)
 trainIndex <- createDataPartition(dat$X, p = .8,
                                   list = FALSE,
                                   times = 1)
 
-nflTrain <- dat[ trainIndex,]
-nflTest  <- dat[-trainIndex,]
+dat <- dat[ trainIndex,]  #training data
+test  <- dat[-trainIndex,]  #test data for final evaluation
 
 
-nflTrain <- dat[ trainIndex,]
-nflTest  <- dat[-trainIndex,]
+#Create 5 folds
+folds <- cut(seq(1,nrow(dat)),breaks=5,labels=FALSE)
 
 
-#testing w/ various numbers of trees
-#rf1 <- randomForest(good ~ temp + wspd + dist + iced + turf + precip, nflTrain, ntree=10000)
-#rf2 <- randomForest(good ~ cold + windy + dist + iced + turf + precip, nflTrain, ntree=10000)
-rf3 <- randomForest(good ~ temp + wspd + dist + iced + turf + precip, nflTrain, ntree=5000)
-rf4 <- randomForest(good ~ cold + windy + dist + iced + turf + precip, nflTrain, ntree=5000)
-rf5 <- randomForest(good ~ temp + wspd + dist + iced + turf + precip, nflTrain, ntree=1000)
-rf6 <- randomForest(good ~ cold + windy + dist + iced + turf + precip, nflTrain, ntree=1000)
-
-rf7 <- randomForest(good ~ temp + wspd + dist + iced + turf + precip, nflTrain, ntree=500)
-rf8 <- randomForest(good ~ cold + windy + dist + iced + turf + precip, nflTrain, ntree=500)
+#generate function
+#dat$Thunderstorms <- NULL
+#dat$away <- NULL
+#n <- names(dat)
+#f1 <- as.formula(paste("good ~", paste(n[!n %in% "good"], collapse = " + ")))
+f1 <- as.formula("good ~ temp + wspd + dist + iced + turf + precip") #continuous wind speed
+f2 <- as.formula("good ~ temp + windy + dist + iced + turf + precip")  #categorical wind speed
 
 
-preds1 <- predict(rf5, nflTest)
-preds2 <- predict(rf6, nflTest)
+#parameters to be tested: ntree (no. of trees in forest), model (trying two different feature sets)
+ntree_list = list(100, 250, 500, 750)
+model_list = list(f1, f2)
+
+MSE_Store = list() #store model mse stores here
+#Perform 5 fold cross validation
+counter = 0
+for(i in 1:length(ntree_list)){
+  for(j in 1:length(model_list)){
+    model_mse_store = list()  #reset this one for each model tested
+    for(k in 1:5){
+      #Segement your data by fold using the which() function 
+      testIndexes <- which(folds==k,arr.ind=TRUE)
+      testData <- dat[testIndexes, ]
+      trainData <- dat[-testIndexes, ]
+      
+      #train model with this set of (ntree, model, fold k)
+      rf <- randomForest(model_list[[j]], trainData, ntree=ntree_list[[i]])  
+
+      #measuring on test data: SSR 370.34
+      preds <- predict(rf, testData)
+      
+      testData$preds <- preds
+      testData$resids <- (testData$good - testData$preds)^2
+      
+      #store score of each fold's model
+      SSR <- sum(testData$resids)
+      MSE <- SSR/nrow(testData)
+      model_mse_store[[k]] <- MSE
+    }
+    #get CVmse for this model, append to score tracker
+    model_mse_store <- mean(sapply(model_mse_store,mean))
+    counter = counter + 1
+    MSE_Store[[counter]] <- model_mse_store
+  }
+}
+
+#continuous wind results
+mses1 = list(0.1355714, 0.1357699, 0.1357104, 0.1355051)
+#categorical wind results
+mses2 = list(0.1343988, 0.1343337, 0.1343367, 0.1343401)
+
+#best model: function 2, ntree = 500
+rf <- randomForest(f2, dat, ntree=500)  
+
+preds <- predict(rf, test)
 
 
-qplot(x=nflTest$dist, y=preds2, color="red") + guides(colour=FALSE) +
-  scale_x_continuous(breaks = round(seq(min(15), max(nflTest$dist), by = 5),1)) +
+qplot(x=test$dist, y=preds, color="red") + guides(colour=FALSE) +
+  scale_x_continuous(breaks = round(seq(min(15), max(test$dist), by = 5),1)) +
   scale_y_continuous(breaks=round(seq(min(0), max(1), by=.05), 1))
 
 
-nflTest$preds1 <- preds1
-nflTest$preds2 <- preds2
-nflTest$resids1 <- (nflTest$good - nflTest$preds1)^2
-nflTest$resids2 <- (nflTest$good - nflTest$preds2)^2
+test$preds1 <- preds
+test$resids1 <- (test$good - test$preds)^2
 
-SSR1 <- sum(nflTest$resids1)
-SSR2 <- sum(nflTest$resids2)
+SSR <- sum(test$resids1)
+MSE = SSR/nrow(test)
 
-
-#use w/ test data 
-preds1 <- predict(rf1, nflTest)
-preds2 <- predict(rf2, nflTest)
-
-nflTest$preds1 <- preds1
-nflTest$preds2 <- preds2
-nflTest$resids1 <- (nflTest$good - nflTest$preds1)^2
-nflTest$resids2 <- (nflTest$good - nflTest$preds2)^2
-
-SSR1 <- sum(nflTest$resids1)
-SSR2 <- sum(nflTest$resids2)
-
-#5,000 trees:
-preds3 <- predict(rf3, nflTest)
-preds4 <- predict(rf4, nflTest)
-
-nflTest$preds3 <- preds3
-nflTest$preds4 <- preds4
-nflTest$resids3 <- (nflTest$good - nflTest$preds3)^2
-nflTest$resids4 <- (nflTest$good - nflTest$preds4)^2
-
-SSR3 <- sum(nflTest$resids3)
-SSR4 <- sum(nflTest$resids4)
-
-#1,000 trees:
-preds5 <- predict(rf5, nflTest)
-preds6 <- predict(rf6, nflTest)
-
-nflTest$preds5 <- preds5
-nflTest$preds6 <- preds6
-nflTest$resids5 <- (nflTest$good - nflTest$preds5)^2
-nflTest$resids6 <- (nflTest$good - nflTest$preds6)^2
-
-SSR5 <- sum(nflTest$resids5)
-SSR6 <- sum(nflTest$resids6)
-
-#500 trees: 
-preds7 <- predict(rf7, nflTest)
-preds8 <- predict(rf8, nflTest)
-
-nflTest$preds7 <- preds7
-nflTest$preds8 <- preds8
-nflTest$resids7 <- (nflTest$good - nflTest$preds7)^2
-nflTest$resids8 <- (nflTest$good - nflTest$preds8)^2
-
-SSR7 <- sum(nflTest$resids7)
-SSR8 <- sum(nflTest$resids8)
-
-#show results: number of trees did not seem to matter a great deal 
-SSR1
-SSR2
-SSR3
-SSR4
-SSR5
-SSR6
-SSR7
-SSR8
 
 #feature importances and other details
-importance(rf7, type=2)
-varImpPlot(rf7)
-plot(rf7, log="y")
+importance(rf, type=2)
+varImpPlot(rf)
+plot(rf, log="y")
